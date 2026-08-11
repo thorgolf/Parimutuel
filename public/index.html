@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Parimutuel Golf Betting</title>
+<style>
+  :root {
+    --green: #1b5e3a;
+    --green-dark: #123d26;
+    --gold: #c9a227;
+    --bg: #f4f6f4;
+    --card: #ffffff;
+    --border: #dde3dd;
+    --text: #1e2622;
+    --muted: #6b7770;
+    --red: #b3261e;
+    --red-bg: #fdecea;
+    --ok-bg: #eaf6ee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+    max-width: 900px;
+  }
+  h1 {
+    font-size: 22px;
+    margin: 0 0 4px;
+    color: var(--green-dark);
+  }
+  .subtitle {
+    color: var(--muted);
+    margin: 0 0 20px;
+    font-size: 14px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 16px;
+    margin: 0 0 12px;
+    color: var(--green-dark);
+  }
+  .row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  select {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-size: 13px;
+  }
+  button {
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--green);
+    background: var(--green);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.secondary { background: #fff; color: var(--green); }
+  button.danger { background: #fff; color: var(--red); border-color: var(--red); padding: 4px 8px; font-size: 12px; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  button:hover:not(:disabled) { opacity: 0.88; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { border: 1px solid var(--border); padding: 6px 8px; text-align: center; }
+  th { background: #eef2ee; color: var(--green-dark); }
+  td.name-col, th.name-col { text-align: left; font-weight: 600; }
+  .sum-cell { font-weight: 700; }
+  .sum-ok { background: var(--ok-bg); color: var(--green-dark); }
+  .sum-bad { background: var(--red-bg); color: var(--red); }
+  .muted { color: var(--muted); font-size: 12px; }
+  .warn { color: var(--red); font-size: 12px; font-weight: 600; }
+  .footer-note { font-size: 12px; color: var(--muted); margin-top: 24px; }
+  .totals-row td { font-weight: 700; background: #f7f9f7; }
+</style>
+</head>
+<body>
+
+<h1>🏌️ Parimutuel Flight Betting</h1>
+<p class="subtitle">In each flight, bet exactly $10 total, split however you like across one or more golfers in whole-dollar amounts. Winnings from each flight's pool are paid out to whoever bet on the winning golfer, in proportion to their stake.</p>
+
+<div class="card">
+  <h2>Your Name</h2>
+  <p class="muted">Select your name from the roster. If you've already submitted, your picks will load back in.</p>
+  <div class="row">
+    <select id="new-bettor-select" style="min-width:220px;" onchange="onBettorPicked(this)"></select>
+  </div>
+  <div id="bettor-list"></div>
+</div>
+
+<h2 style="color:var(--green-dark); margin: 24px 0 4px;">Place Bets</h2>
+<p class="muted" style="margin-bottom:12px;">Each flight must total exactly $10, in whole dollars — split it across as many golfers as you like.</p>
+<div id="bets-container"></div>
+
+<div class="card">
+  <div id="submit-status" style="margin-bottom:10px;"></div>
+  <div class="row">
+    <button id="submit-btn" onclick="submitBets()">Submit My Bets</button>
+    <button class="danger" onclick="clearMyBets()">Clear My Bets</button>
+  </div>
+</div>
+
+<h2 style="color:var(--green-dark); margin: 24px 0 4px;">All Submitted Bets</h2>
+<p class="muted" style="margin-bottom:12px;">Everyone's bets, shared live from the database. <button class="secondary" style="padding:3px 10px;" onclick="renderAllBets()">Refresh</button></p>
+<div id="all-bets-container"></div>
+
+<p class="footer-note">Your submitted bets are stored on the server, shared by everyone who opens this page — nothing is kept in this browser only.</p>
+
+<script>
+function uid() { return Math.random().toString(36).slice(2, 10); }
+
+const DEFAULT_FLIGHTS = [
+  { name: "Championship Flight", players: ["Albini, Nicola","Aronson, Alec","Brady, Michael","Cavanaugh, Liam","Cavanaugh, Sean","Cooper, Stephen","Coronella, Mark","Crocker, Bryan","Delinko, Dan","Fiore, Michael","Foo, Brandon","Given, John","Godinez, Michael","Heinrichs, Raymond","Koren, Jordan","Lee, Steven","McGuire, Clark","Mims, Mike","Nadrich, Ben","Naumann, Ted","Okmin, Joel","Pautsch, Greg","Resurreccion, Alex","Ross, Lee","Schneider, Darrin","Sosin, Adam","Wade, Todd","Watkin, Roger","Williams, Doug","Williams, Jeff"] },
+  { name: "President's Flight", players: ["Akin, David","Andrade, Paul","Andrews, Geno","Badour, Garry","Badour, Keegan","Bennett, Mike","Dauber, Marc","Deats, Collin","Endler, Michael","Fitzpatrick, Thomas","Hazlitt, Chria","Kaul, Karl","Keliddari, Rod","Kiczula, Phil","Lang, Paul","Langsbard, Adam","Lathbury, Daniel","Lee, Maxwell","Lincoln, Jp","Nichol, Mike","Pistotnik, Dave","Purcell, Sam","Ramirez, Forrest","Romero, Francisco","Rosenberg, Joel","Saltzman, Robert","Tandberg, Thor","Wieber, T-Bone","Wilkins, James","Wong, Steven"] },
+  { name: "VP Flight", players: ["Amentt, Paul","Astrachan, Steven","Bharath, Arun","Carrier, Patrick","Chin, Garrett","Chung, David","Connell, Dermot","Crown, Tristan","Cullen, Brian","Djafar, Rinaldi","Ferguson, Edward","Fournier, Neil","Frank, Adam","Gisondo, James","Harrold, Steve","Hoy, Michael","Jacobsen, Eric","Kim, Donald","Lande, Chad","Marquetti, Corey","Mohammad, Tameem","Newberg, David","Palma, Manny","Reut, Anton","Ryan, Daniel","Sobash, Sean","Syrett, Philip","Willy, Daniel","Wilson, Peter","Wohlstadter, Tom"] },
+  { name: "Secretary's Flight", players: ["Bate, David","Busquets, Ozzy","Castillo, Mike","Coggins, Jeff","Dunn, Daniel","Furukawa, Ross","Herzog, Jay","Hill, Solomon","Hobbs, Chris","Hume, Richard","Iorlano, Tim","Kahn, Steven","Kim, Kris","Kim, Steve","Krieger, Frank","Lafayette, Wil","Lindeman, Kristofer","Ogawa, Go","Ortiz, Manuel","Phok, Peter","Posner, Michael","Quinn, Brendan","Sawhney, Nikhil","Schnetter, Ulrich","Shamji, Alim","Shapiro, Robert","Stanley, Mark","Tulloch, Chad","Wolf, Dan","Wright, David"] }
+];
+
+// Full club roster — anyone eligible to place a bet (superset of the flight competitors)
+const MASTER_ROSTER = ["Abron, BJ", "Accardi, Jim", "Adlawan, Cyrano", "Agay, Richard", "Ahmed, Sean", "Ahuja, Herman", "Akin, David", "Alan, Jeffrey", "Albini, Nicola", "Alferez, Francisco", "Allen, Michael", "Aloia, Nicholas", "Alpert, Jeremy", "Alpin, Jackson", "Altieri, Fred", "Amentt, Paul", "Anderson, Alexander", "Anderson, Brian", "Anderson, Brian W", "Anderson, Glen", "Andrade, Paul", "Andrews, Geno", "Andrews, Ryan", "Anthony, Angelo", "Aronson, Alec", "Aronson, Matt", "Asherson, Adam", "Astrachan, Steven", "Atherton, Michael", "Aval, Simon", "Babinec, Steven", "Badour, Garry", "Badour, Keegan", "Baliukonis, Cornelius", "Barbakow, Daniel", "Baren, Shaan", "Bate, David", "Bauman, Brandon", "Beaver, John", "Beck, Brandon", "Beechel, Devon", "Behrendt, Kevin", "Beliveau, Jeff", "Benad, Patrick", "Bendel, Gary", "Bender, David", "Bennett, Mike", "Bensimon, David", "Benudiz, Ronald", "Berglass, David", "Bergna, Louis", "Bernard, Jim", "Bernbach, Aaron", "Berne, Fred", "Bernstein, David", "Berry, David", "Bersohn, Malcolm", "Betzler, Evan", "Bharath, Arun", "Bienkowski-Gibbs, Jan", "Billips, Martin", "Blakeley, Zachery", "Blank, Jim", "Bock, Rich", "Bodell, Greg", "Bogart, Charles", "Boland, Jay", "Bon, Lou", "Bonner, Jesse", "Borrud, Greg", "Botwick, Harrison HC", "Brady, M", "Breidenbach, Fritz", "Bren, Aaron", "Brennan, Sean", "Brito, Fellipe", "Broudy, Jeff", "Brovold , Aiden", "Brown, Cameron", "Brown, Evan", "Brummel, Nate", "Bublitz, Mark", "Buchman, Martin", "Burns, Robert", "Burrell, Travis", "Busquets, Ozzy", "Butler, Justin", "Callahan, Michael", "Campos, Fidel", "Carlson, Michael", "Carpio, Daniel", "Carrier, Patrick", "Carroll, John", "Castillo, Mike", "Catt, David", "Catterall, Grady", "Cavanaugh, Liam", "Cavanaugh, Sean", "Centeno, George", "Cha, Stanley", "Chan, Alexander", "Chan, Andrew", "Chase, Herb", "Chawinga, Samuel", "Chen, Alex", "Chen, Robert", "Cheng, Dennis", "Chin, Garrett", "Chiu, Shin", "Choe, Jonah", "Choi, Albert", "Christie, Mathew", "Chu, Morgan", "Chung, Dave", "Clair, Matthew", "Clarizio, John", "Clark, Andrew", "Cline, Jacob", "Coggins, Jeff", "Cohen, Gabriel", "Cohen, Matthew", "Coit, Justin", "Coleman, Thomas", "Collier, Benjamin", "Compton, Nicholas", "Condon, Zachary", "Connell, Dermot", "Cooper, Keith", "Cooper, Stephen", "Cope, James", "Copelan, Ivan", "Corcoran, Patrick", "Coronella, Mark", "Coulter, Mike", "Crinella, Benjamin", "Crocker, Bryan", "Crossan, Daniel", "Crown, Tristan", "Crummy, Kevin", "Cruz, Frank", "Cullen, Brian", "Curry, Justin", "Damyan, Trevor", "Dantes, Edmond", "Dauber, Marc", "Dauria, Philip", "Davidson, Spencer", "Davis, Michael", "De Respino, Seve", "Deats, Collin", "Del Valle, John Michael", "Delinko, Dan", "Denove, Chris", "Deshler, Brian", "Devkar, Andrew", "Djafar, Rinaldi", "Dodd, Patrick", "Donahue, Christian", "Doremus, Willy", "Dotson, Matt", "Drisdelle, Justin", "Driver, Jason", "Dunn, Daniel", "Dykstra, Nate", "Ehrhart, Garrett", "Endler, Michael", "Engel, Jann", "Eyler, Michael", "Farmar, Damon", "Farraye, Brandon", "Faruqui, Imran", "Fay, William", "Fehily, Brendan", "Feldman, Joe", "Felker, Matthew", "Ferguson, Edward", "Fetters, James", "Fields, Christopher", "Fiore, Mike", "Fishman, Josh", "Fishman, Joshua", "Fitzgerald, Jon", "Fitzpatrick, Thomas", "Flashman, Robert", "Flatley, Brendan", "Fong, Brian", "Foo, Brandon", "Forde, Steven", "Fournier, Neil", "Frampton, Michael", "Frank, Adam", "Fraser, Ryan", "Frech, Ryan", "Freed, Carl", "Freed, Daniel", "Fritsche, Mark", "Fujiu, Ryan", "Fukuda, John", "Furukawa, Ross", "Gadinsky, Seth", "Gaines, Michael", "Gallagher, Patrick", "Gamble, William", "Gamlin, Kurt", "Gampel, Jeffrey", "Ganey, Wiley", "Gano, Richard", "Garay, Val", "Garwood, Kip", "Gaston, Erick", "Gautreaux, David", "Geiger, David", "Gilbert, Daniel", "Gilbreth, Michael", "Gisondo, James", "Given, John", "Glassman, Tyler", "Glotzer, Josh", "Godinez, Michael", "Gold, Sam", "Goldberg, Effie", "Goldberg, Randy", "Goldberg, Steven", "Gomez, Everardo", "Goodman, Andrew", "Gottlieb, Robert", "Goyal, Akshay", "Granello, James", "Graves, James", "Greenberg, David", "Grenzeback, Keith", "Griffes, Peter", "Griffin, Tom", "Grigsby, Jesse", "Gross, Jonathan", "Gross, Josh", "Guez, Nicolas", "Gullixson, Roland", "Hafley, Trenton", "Harms, Tim", "Harran, Patrick", "Harris , Clifford", "Harris, Brandon", "Harris, Joe", "Harrold, Steve", "Hart, Joe", "Harty, Brendan", "Hartzler, Rick", "Hauser, Brett", "Havai, Robert", "Hawthorne, Nicholas", "Hazlitt, Chria", "Heck, Alex", "Heggeness, Todd", "Heinrichs, Raymond", "Hejazi, Sohrab", "Hensiek, Jeffrey", "Hermacinski, Max", "Herron, Vince", "Hershey, Jared", "Herzog, Adam", "Herzog, Jay", "Hess, Otto", "Hiatt, Michael", "Hill, Kevin", "Hill, Solomon", "Hobbs, Chris", "Hogan, Steven", "Holbrow, Bill", "Holender, Darrin", "Holmes, Keith", "Hopkins, Eric", "Horn, Sid", "Horwitz, Brian", "House, Jim", "Hoy, Michael", "Hromadka, Duncan", "Huizar, Carlos", "Hume, Richard", "Hummel, Timothy", "Huppert, Jonathan", "Hurlbut, Toby", "Hwang, Jeff", "Hyun, Sang", "Ikeda, Sato", "Intarachot, Kam", "Iorlano, Tim", "Irwin, Esteban", "Isaacson, Jay", "Iyer, Venkatesh", "Jabs, Nicolas", "Jacchia, Alessandro", "Jacobs, Bryce", "Jacobsen, Eric", "Jaffe, Maltthew", "Jalalabadi, Faryan", "Jankowski, Andrew", "Jarnot, Timothy", "Jerry, Todd", "Jones, Anthony", "Jones, Barry", "Jones, David", "Jones, John", "Jones, Michael", "Kaczorowski, Jack", "Kahn, Steven", "Kalin, Dave", "Kamedulski, Brad", "Kaplan, Mark", "Kasirer, Jonathan", "Kaul, Karl", "Kaushik, Mukund", "Kay, Lowell", "Kayacan, Raymond", "Kedeshian, Paul", "Keliddari, Rod", "Kelly, John", "Kennedy, Michael", "Kenny, Bryan", "Kenny, Jeff", "Kerendian, Shawn", "Khan, Shahid", "Kiczula, Phil", "Kienlen, Mark", "Kilstein, Ryan", "Kim, Alex", "Kim, Andrew", "Kim, Chris", "Kim, Donald", "Kim, Hongjoo", "Kim, Joe", "Kim, Jung", "Kim, Kevin", "Kim, Kris", "Kim, Peter", "Kim, Steve", "King, Howard", "King, Kyle", "Kirk, Rich", "Kirschenbaum, Allen", "Kisgen, Mike", "Klimowicz, Henry", "Knaus, David", "Ko, Jay", "Koch, Tim", "Koren, Jordan", "Kosters, Richard", "Kovner, Jacob", "Kovolenko, Josh", "Kramer, Josh", "Krieger, Frank", "Kronovet, Robert", "Krute, Jason", "Kukreja, Ajeya", "Kullas, Brian", "LaFayette, Wil", "Lack, Joe", "Lally, Jesse", "Lamon, Andre", "Lande, Chad", "Landowski, Benjamin", "Lang, Paul", "Lange, Jerry", "Langsbard, Adam", "Lash, Garrett", "Lathbury, Daniel", "Lau, Grant", "Laughlin, Ryan", "Lauridsen, Ian", "LeMond, Jonathan", "Lee, Brian", "Lee, David", "Lee, Max", "Lee, Steven", "Leeds, Justin", "Leigh, Evan", "Lemke, Eric", "Lerman, Steven", "Levin, Seth", "Levine, Mark", "Levy, Evan", "Lewinstein, Marc", "Lewis, Scott", "Li, Jonathan", "Lin, Ed", "Lincoln, JP", "Lindeman, Kristofer", "Lipp, Christopher", "Lippman, Christopher", "Lira, Miguel", "Little, Norman", "Litvak, Salvador", "Lockwood, John", "Lofberg, Lenny", "Lombardi, Matthew", "Longo, Zak", "Lopez, Brandon", "Loughnot, David", "Lovell, Ken", "Lovett, David", "Luckenbill, David", "Luedeke, Benjamin", "Luke, Chuck", "Lusk, Jeremy", "Lydon, Charlie", "Lynn, Ben", "Lyon, Cliff", "Madan, Sidharth", "Magill, Mark", "Mahler, John", "Major, John", "Maloney, Sean", "Mann, Robert", "Manoochehri, Nick", "Marcais, Armelle", "Margolies, Jeff", "Margolis, Jonathan", "Mariscal, Greg", "Marks, Chaim", "Marquetti, Corey", "Maxey, Gilbert", "McCann, Artie", "McGanty, Dan", "McGuire, Clark", "McMorrow, Tim", "McNamara, John", "McWeeney, Brian", "Meenaghan, James", "Meisels, Russell", "Melniker, Richard", "Mendez, Jose", "Mendez, Nicholas", "Messing, Brian", "Meyer, Jonathan", "Meyers, Tyler", "Miller, Alan", "Millsom, Scott", "Millstein, Aaron", "Mims, Mike", "Mirner, Doug", "Mischka, Jeffrey", "Mohammad, Tameem", "Mohler, Tom", "Montgomery, Brett", "Montgomery, John", "Moorvitch, Josh", "Mortensen, Christopher", "Moss, Stanley", "Mostafa, Mahmoud", "Murphy, James", "N, Raj", "Nackman, Robert", "Nadrich, Ben", "Nagori, Anand", "Namkung, Richard", "Naramore, Chad", "Naramore, David", "Naso, Brad", "Naumann, Ted", "Navarro, Francisco", "Naveen, Vivek", "Neumann, Jon", "Newberg, David", "Newman, Jason", "Newman, Matt", "Nguyen, Tan", "Nichol, Mike", "Nicholas, Evan", "Noetzel, Calvin", "Nomura, Eric", "Nord, Craig", "Norris, John", "Nuchols, Steve", "Nuno, Roberto", "Nutt, Ray", "Obasohan, Nosa", "Oehm, David", "Ogawa, Go", "Oh, John", "Oh, Phillip", "Okmin, Joel", "Olson, Albert", "Oneil, Dylan", "Orlyck, Scott", "Ortiz, Manuel", "Ozer, Tymothy", "Paek, Kevin", "Paigen, Gonzo", "Pakfar, Nader", "Palma, Manny", "Panasci, Anthony", "Pappas, Emerson", "Paris, Bradley", "Park, Won", "Passarelli, Ed", "Pautsch, Greg", "Perez, Ethan", "Perry-Zucker, Daniel", "Peterson, Mark", "Phok, Peter", "Piacentini, Christopher", "Pierandozzi-Howes, Keenan", "Piscitello, Robert", "Pistotnik, Brett", "Pistotnik, Dave", "Porrello, Johnny", "Porter, Gregory", "Posadas, Edwin", "Posner, Michael", "Posthuma, Nicholas", "Potthoff, Gregory", "Powell, Todd", "Pregler, Johnathan", "Presicci, Neil", "Purcell, Sam", "Purohit, Devesh", "Quadrel, Steven", "Quinn, Brendan", "Rad, Shawn", "Ramirez, Anthony", "Ramirez, Forrest", "Ramsey, Tony", "Rehman, Kamil", "Reid, Henry", "Reitzfeld, Steve", "Resurreccion, Alex", "Reut, Anton", "Rex, Luke", "Reynolds, John", "Rice, Stuart", "Richmond, David", "Riedel, Derek", "Rigaud, Fred", "Rishworth, Andrew Nasty", "Rivas, Geoffrey", "Roberts, Dan", "Rohm, Ted", "Romero, Cisco", "Rompothong, Chawwadee", "Rose, David", "Rosenberg, Joel", "Rosenblood-Cappe, Lincoln", "Ross, Jerry", "Ross, Lee", "Rossitter, Hadley", "Roston, Steven", "Rothstein, Ron", "Rotter, Marc", "Rowey, Chris", "Roze, Chris", "Rucker, Craig", "Rudin, Eric", "Russell, Andrew", "Russell, Michael", "Ruzicka, Blair", "Ryalls, Niall", "Ryan, Daniel", "Ryan, Fred", "Sablin, Viacheslav", "Sackler, Keith", "Sage, Parham", "Sager, Ke", "Salinas, David", "Salkin, Douglas", "Saltzman, Robert", "Sanchez, Jose", "Sandberg, Roark", "Sansone, Dean", "Santo Tomas, Rhoneil", "Sasaki, Ned", "Sauer, Alex", "Savage, Christopher", "Sawchuk, Daryl", "Sawhney, Nikhil", "Saxum, Walter", "Scharf, Eli", "Schiro, Craig", "Schlesinger, Ryan", "Schmocker, Tyler", "Schnapp, Lawrence", "Schneider, Darrin", "Schneider, Paul", "Schneider, Spencer", "Schnetter, Ulrich", "Scott, Sam", "Scribner, Zachary", "Segal, Jason", "Shamji, Alim", "Shapiro, Robert", "Sharma, Vikash", "Shemano, David", "Shin, Steven", "Shindler, Michael", "Shipley, Brad", "Shipp, Joshua", "Shreve, Ken", "Shugar, Dan", "Shung, Alvyn", "Siadatpour, Siavash", "Siahpush, Reza", "Siegel, David", "Silva, Sydney", "Silveira, Ron", "Silverman, Mark", "Simon, Robert", "Simon, Steven", "Singer, Rich", "Skelly, Max", "Slain, Colman", "Slevcove, Ryan", "Sloan, Stephen", "Smith, Erik", "Smith, Gabe", "Smith, Steve", "Smith, Steven", "Sobash, Sean", "Sogg, James", "Somun, Amer", "Sosin, Adam", "Sottile, Anthony", "Spitz, Jeffrey", "Springer, Nicolas", "Staley, Eric", "Stanley, Mark", "Stassi, Joseph", "Steffner, Ted", "Stephenson, James", "Sterling, Brad", "Sterlyagov , Maxim", "Stern, Alexander", "Stewart, James", "Stiller, Christian", "Stokes, Mitch", "Stokes, Taylor", "Strabone, Andrew", "Stratton, Sean", "Strauss, Benjamin", "Strohmaier, Robert", "Stroyman, Matthew", "Suggett, Matt", "Sullivan, Brady", "Syrett, Philip", "Tandberg, Thor", "Tangney, John", "Tankersley, Hardie", "Tari, Shayan", "Tarnow, Josh", "Tawara, Kenichiro", "Taylor, Joe", "Tendall, Jeff", "Terbeek, Mark", "Tourville, Brandeaux", "Tranen, Jeffrey", "Tulloch, Chad", "Tyagi, Amit", "Urreiztieta, Mark", "Vandenberg, Thomas", "Varadi, Victor", "Varillas Cilia, Mayra", "Vasquez, Felino", "Vasquez, Ruben", "Veikune , Lehapi", "Vender, Jon", "Venegas, Al", "Von Meister, William", "Voutsinas, Andy", "Wacker, Randall", "Wade, Todd", "Wagner, Nicholas", "Wahl, Eric", "Walling, Geoffrey", "Walsh, Joe", "Wang, Andi", "Ward, John", "Warner, Miles", "Watkin, Roger", "Watkinson, Ryan", "Watt, Mathew", "Webb, Chris", "Weber, Thomas", "Weil, Scott", "Weinrot, Aidan", "Weiss, Andrew", "Wendt, Bryan", "Werner, Nolan", "Wexler, Dave", "White, John", "White, Scott", "Whithorne, Doug", "Whitney, Andy", "Wieber, T-Bone", "Wigmore, John", "Wiles, Benjamin", "Wilfork, Rory", "Wilkins, James", "Williams, Doug", "Williams, Ernest", "Williams, Jeff", "Willy, Daniel", "Wilson, Colby", "Wilson, Kevin", "Wilson, Peter", "Winssinger, Andrew", "Wise, Ashton", "Wohlstadter, Tom", "Wolf, Dan", "Wolman, Yale", "Wolonick, Josh", "Wong, Darren", "Wong, Steven", "Woodbridge, Josh", "Worku, Teodros", "Wright, David", "Yada, Akira", "Yi, Pyong", "Yim, Clarence", "Yoon, Jae", "Youngerman, Mike", "Yovino, Justin", "Zaal, Matthew", "Zafar-Khan, Ali", "Zamos, David", "Zepeda, Juan", "Zhao, Yipeng", "Zharkov, Yuri", "Zhuo, Tianxiang", "Ziebarth, David", "Zimmerman, James", "Zimmerman, Zachary", "de la Garza, Esteban", "wheaton, will"];
+
+const BET_AMOUNT_CAP = 10; // exact total required per flight, whole dollars only
+
+// Client-side working state for whoever currently has this page open.
+const flights = DEFAULT_FLIGHTS.map(f => ({
+  id: uid(),
+  name: f.name,
+  players: f.players.map(name => ({ id: uid(), name }))
+}));
+let bettorName = null;
+let bets = {};   // { flightId: { playerId: amount } }
+let picks = {};  // { flightId: [playerId, ...] }
+
+function findFlight(flightId) { return flights.find(f => f.id === flightId); }
+function findPlayer(flightId, playerId) {
+  const f = findFlight(flightId);
+  return f ? f.players.find(p => p.id === playerId) : null;
+}
+function findPlayerByName(flightId, name) {
+  const f = findFlight(flightId);
+  return f ? f.players.find(p => p.name === name) : null;
+}
+function getBet(flightId, playerId) { return (bets[flightId] || {})[playerId] || 0; }
+function setBet(flightId, playerId, value) {
+  if (!bets[flightId]) bets[flightId] = {};
+  bets[flightId][playerId] = value;
+}
+function flightSum(flightId) {
+  return Object.values(bets[flightId] || {}).reduce((s, v) => s + (v || 0), 0);
+}
+function money(n) { return '$' + Math.round(n); }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function getPicks(flightId) {
+  if (!picks[flightId]) {
+    const existing = Object.keys(bets[flightId] || {});
+    if (existing.length > 0) {
+      picks[flightId] = existing;
+    } else {
+      const f = findFlight(flightId);
+      picks[flightId] = (f && f.players.length > 0) ? [f.players[0].id] : [];
+    }
+  }
+  return picks[flightId];
+}
+function addPick(flightId) {
+  const f = findFlight(flightId);
+  const list = getPicks(flightId);
+  const available = f.players.filter(p => !list.includes(p.id));
+  if (available.length === 0) { alert('Every golfer in this flight already has a pick.'); return; }
+  list.push(available[0].id);
+  setBet(flightId, available[0].id, getBet(flightId, available[0].id));
+  renderBets();
+}
+function removePick(flightId, playerId) {
+  const list = getPicks(flightId);
+  const idx = list.indexOf(playerId);
+  if (idx > -1) list.splice(idx, 1);
+  if (bets[flightId]) delete bets[flightId][playerId];
+  renderBets();
+}
+function changePick(flightId, oldPlayerId, newPlayerId) {
+  if (oldPlayerId === newPlayerId) return;
+  const list = getPicks(flightId);
+  const idx = list.indexOf(oldPlayerId);
+  if (idx > -1) list[idx] = newPlayerId;
+  const amt = getBet(flightId, oldPlayerId);
+  if (bets[flightId]) delete bets[flightId][oldPlayerId];
+  setBet(flightId, newPlayerId, amt);
+  renderBets();
+}
+function onBetInput(flightId, playerId, value) {
+  const v = parseInt(value, 10);
+  setBet(flightId, playerId, isNaN(v) ? 0 : v);
+  renderBets();
+}
+
+// ---------- your name ----------
+function onBettorPicked(select) {
+  const name = select.value;
+  if (!name) { bettorName = null; bets = {}; picks = {}; renderBettorList(); renderBets(); return; }
+  bettorName = name;
+  renderBettorList();
+  loadMyBetsFromServer(name);
+}
+function renderBettorSelect() {
+  const select = document.getElementById('new-bettor-select');
+  if (!select) return;
+  select.innerHTML = '<option value="">— select your name —</option>' +
+    MASTER_ROSTER.map(n => `<option value="${escapeHtml(n)}" ${n === bettorName ? 'selected' : ''}>${escapeHtml(n)}</option>`).join('');
+}
+function renderBettorList() {
+  renderBettorSelect();
+  const container = document.getElementById('bettor-list');
+  container.innerHTML = bettorName
+    ? `<p class="muted">Betting as <strong>${escapeHtml(bettorName)}</strong>.</p>`
+    : '<p class="muted">Select your name above to start placing bets.</p>';
+}
+
+async function loadMyBetsFromServer(name) {
+  bets = {};
+  picks = {};
+  document.getElementById('submit-status').innerHTML = '<p class="muted">Loading your existing bets, if any…</p>';
+  try {
+    const res = await fetch('/api/bets/' + encodeURIComponent(name));
+    const mine = res.ok ? await res.json() : [];
+    mine.forEach(row => {
+      const f = flights.find(fl => fl.name === row.flight);
+      if (!f) return;
+      const p = findPlayerByName(f.id, row.golfer);
+      if (!p) return;
+      setBet(f.id, p.id, row.amount);
+      const list = getPicks(f.id);
+      if (!list.includes(p.id)) list.push(p.id);
+    });
+    document.getElementById('submit-status').innerHTML = mine.length
+      ? '<p class="muted">Loaded your previous submission — edit and resubmit any time.</p>'
+      : '';
+  } catch (e) {
+    document.getElementById('submit-status').innerHTML = '<p class="warn">Could not reach the server to load your previous bets. You can still fill in new ones below.</p>';
+  }
+  renderBets();
+}
+
+// ---------- bets ----------
+function amountSelectOptions(current, maxAllowed) {
+  let opts = '<option value="0"' + (current === 0 ? ' selected' : '') + '>Select amount</option>';
+  for (let v = 1; v <= maxAllowed; v++) {
+    opts += `<option value="${v}" ${v === current ? 'selected' : ''}>${money(v)}</option>`;
+  }
+  return opts;
+}
+function renderBets() {
+  const container = document.getElementById('bets-container');
+  if (!bettorName) {
+    container.innerHTML = '<div class="card"><p class="muted">Select your name above first.</p></div>';
+    return;
+  }
+  container.innerHTML = flights.map(f => {
+    const list = getPicks(f.id);
+    const sum = flightSum(f.id);
+    const ok = sum === BET_AMOUNT_CAP;
+    const remaining = Math.max(0, BET_AMOUNT_CAP - sum);
+    const hasUnpicked = f.players.some(p => !list.includes(p.id));
+    const canAddMore = remaining > 0 && hasUnpicked;
+    const pickRows = list.map(pid => {
+      const amt = getBet(f.id, pid);
+      const maxAllowed = Math.max(0, BET_AMOUNT_CAP - (sum - amt));
+      const golferOptions = f.players
+        .filter(p => p.id === pid || !list.includes(p.id))
+        .map(p => `<option value="${p.id}" ${p.id === pid ? 'selected' : ''}>${escapeHtml(p.name)}</option>`)
+        .join('');
+      return `
+        <div class="row">
+          <select onchange="changePick('${f.id}','${pid}', this.value)">${golferOptions}</select>
+          <select onchange="onBetInput('${f.id}','${pid}', this.value)">${amountSelectOptions(amt, maxAllowed)}</select>
+          <button class="danger" onclick="removePick('${f.id}','${pid}')">Remove</button>
+        </div>`;
+    }).join('') || '<p class="muted">No picks yet for this flight.</p>';
+    return `
+      <div class="card">
+        <h2>${escapeHtml(f.name)} <span class="muted">(must total exactly $10, whole dollars only)</span>
+          <span class="sum-cell ${ok ? 'sum-ok' : 'sum-bad'}" style="float:right; padding:2px 10px; border-radius:6px;">${money(sum)} / $10</span>
+        </h2>
+        ${pickRows}
+        ${canAddMore ? `<button class="secondary" onclick="addPick('${f.id}')">Add another player</button>` : (ok ? '<p class="muted">Full $10 allocated for this flight.</p>' : '')}
+      </div>
+    `;
+  }).join('');
+}
+
+// ---------- submit / clear ----------
+function setSubmitStatus(html) {
+  document.getElementById('submit-status').innerHTML = html;
+}
+async function submitBets() {
+  if (!bettorName) { setSubmitStatus('<p class="warn">Select your name above before submitting.</p>'); return; }
+
+  const notReady = flights.filter(f => flightSum(f.id) !== BET_AMOUNT_CAP);
+  if (notReady.length > 0) {
+    setSubmitStatus('<p class="warn">Every flight needs exactly $10 bet before you can submit. Still short on: ' +
+      notReady.map(f => escapeHtml(f.name)).join(', ') + '.</p>');
+    return;
+  }
+
+  const payload = [];
+  flights.forEach(f => {
+    getPicks(f.id).forEach(pid => {
+      const amt = getBet(f.id, pid);
+      if (amt > 0) {
+        const p = findPlayer(f.id, pid);
+        payload.push({ flight: f.name, golfer: p ? p.name : '', amount: amt });
+      }
+    });
+  });
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Submitting…';
+  setSubmitStatus('<p class="muted">Submitting your bets…</p>');
+
+  try {
+    const res = await fetch('/api/bets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bettor: bettorName, picks: payload })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Submission failed.');
+    setSubmitStatus('<p style="color:var(--green-dark); font-weight:600;">✓ Submitted ' + payload.length + ' bet' + (payload.length === 1 ? '' : 's') + ' for ' + escapeHtml(bettorName) + '.</p>');
+    renderAllBets();
+  } catch (e) {
+    setSubmitStatus('<p class="warn">' + escapeHtml(e.message || 'Something went wrong submitting your bets.') + '</p>');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Submit My Bets';
+  }
+}
+
+async function clearMyBets() {
+  if (!bettorName) { setSubmitStatus('<p class="warn">Select your name first.</p>'); return; }
+  if (!confirm('Clear your submitted bets for ' + bettorName + '? This removes them from the shared database.')) return;
+  try {
+    await fetch('/api/bets/' + encodeURIComponent(bettorName), { method: 'DELETE' });
+    bets = {};
+    picks = {};
+    setSubmitStatus('<p class="muted">Your bets have been cleared.</p>');
+    renderBets();
+    renderAllBets();
+  } catch (e) {
+    setSubmitStatus('<p class="warn">Could not reach the server to clear your bets.</p>');
+  }
+}
+
+// ---------- shared "all bets" view ----------
+async function renderAllBets() {
+  const container = document.getElementById('all-bets-container');
+  container.innerHTML = '<p class="muted">Loading…</p>';
+  let all;
+  try {
+    const res = await fetch('/api/bets');
+    all = await res.json();
+  } catch (e) {
+    container.innerHTML = '<p class="warn">Could not load bets from the server.</p>';
+    return;
+  }
+  if (all.length === 0) {
+    container.innerHTML = '<p class="muted">No bets submitted yet.</p>';
+    return;
+  }
+  // Group by flight, then by golfer, so it's clear how much is riding on each player
+  // and exactly who put that money down.
+  const byFlight = {};
+  all.forEach(row => {
+    if (!byFlight[row.flight]) byFlight[row.flight] = {};
+    if (!byFlight[row.flight][row.golfer]) byFlight[row.flight][row.golfer] = { total: 0, bettors: [] };
+    byFlight[row.flight][row.golfer].total += Number(row.amount);
+    byFlight[row.flight][row.golfer].bettors.push({ bettor: row.bettor, amount: Number(row.amount) });
+  });
+  container.innerHTML = Object.keys(byFlight).map(flightName => {
+    const golfers = byFlight[flightName];
+    const pool = Object.values(golfers).reduce((s, g) => s + g.total, 0);
+    const golferNames = Object.keys(golfers).sort((a, b) => golfers[b].total - golfers[a].total);
+    const body = golferNames.map(golfer => {
+      const g = golfers[golfer];
+      const backers = g.bettors
+        .slice()
+        .sort((a, b) => b.amount - a.amount)
+        .map(b => `${escapeHtml(b.bettor)} (${money(b.amount)})`)
+        .join(', ');
+      return `
+        <tr>
+          <td class="name-col">${escapeHtml(golfer)}</td>
+          <td><strong>${money(g.total)}</strong></td>
+          <td style="text-align:left;">${backers}</td>
+        </tr>
+      `;
+    }).join('');
+    return `
+      <div class="card">
+        <h2>${escapeHtml(flightName)} <span class="muted">— pool: ${money(pool)}</span></h2>
+        <table>
+          <thead><tr><th class="name-col">Golfer</th><th>Amount bet on them</th><th style="text-align:left;">Bettors (amount)</th></tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderAll() {
+  renderBettorList();
+  renderBets();
+  renderAllBets();
+}
+renderAll();
+</script>
+</body>
+</html>
