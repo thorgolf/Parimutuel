@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Parimutuel Golf Betting</title>
+<title>RPGC Club Championship Parimutuel</title>
 <style>
   :root {
     --green: #1b5e3a;
@@ -93,6 +93,7 @@
 
 <h1>🏌️ Parimutuel Flight Betting</h1>
 <p class="subtitle">In each flight, bet exactly $10 total, split however you like across one or more golfers in whole-dollar amounts. Winnings from each flight's pool are paid out to whoever bet on the winning golfer, in proportion to their stake.</p>
+<p Betting asclass="muted">Venmo $40 @thorthor immediately after your submission. Any unpaid entries will be removed from the competition.</p>
 
 <div class="card">
   <h2>Your Name</h2>
@@ -111,7 +112,6 @@
   <div id="submit-status" style="margin-bottom:10px;"></div>
   <div class="row">
     <button id="submit-btn" onClick="submitBets()">Submit My Bets</button>
-    <button id="clear-btn" class="danger" onClick="clearMyBets()">Clear My Bets</button>
   </div>
 </div>
 
@@ -247,7 +247,7 @@ function renderBettorList() {
     return;
   }
   container.innerHTML = bettorLocked
-    ? `<p class="muted">Betting as <strong>${escapeHtml(bettorName)}</strong>. <span style="color:var(--green-dark); font-weight:700;">🔒 Locked in — full $40 submitted. See the admin below for corrections.</span></p>`
+    ? `<p Betting asclass="muted"> <strong>${escapeHtml(bettorName)}</strong>. <span style="color:var(--green-dark); font-weight:700;">🔒 Locked in — full $40 submitted. See the admin below for corrections.</span></p>`
     : `<p class="muted">Betting as <strong>${escapeHtml(bettorName)}</strong>.</p>`;
 }
 
@@ -328,9 +328,7 @@ function renderBets() {
   }).join('');
 
   const submitBtn = document.getElementById('submit-btn');
-  const clearBtn = document.getElementById('clear-btn');
   if (submitBtn) submitBtn.disabled = bettorLocked;
-  if (clearBtn) clearBtn.disabled = bettorLocked;
 }
 
 // ---------- submit / clear ----------
@@ -379,24 +377,6 @@ async function submitBets() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Submit My Bets';
-  }
-}
-
-async function clearMyBets() {
-  if (!bettorName) { setSubmitStatus('<p class="warn">Select your name first.</p>'); return; }
-  if (bettorLocked) { setSubmitStatus('<p class="warn">Your bets are locked in — contact the admin for corrections.</p>'); return; }
-  if (!confirm('Clear your submitted bets for ' + bettorName + '? This removes them from the shared database.')) return;
-  try {
-    const res = await fetch('/api/bets/' + encodeURIComponent(bettorName), { method: 'DELETE' });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Could not clear your bets.');
-    bets = {};
-    picks = {};
-    setSubmitStatus('<p class="muted">Your bets have been cleared.</p>');
-    renderBets();
-    renderAllBets();
-  } catch (e) {
-    setSubmitStatus('<p class="warn">' + escapeHtml(e.message || 'Could not reach the server to clear your bets.') + '</p>');
   }
 }
 
