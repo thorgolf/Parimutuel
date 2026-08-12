@@ -114,6 +114,15 @@ app.delete('/api/bets/:bettor', (req, res) => {
   res.json({ status: 'ok', removed: all.length - remaining.length });
 });
 
+// TEMPORARY diagnostic route — confirms whether the running process actually sees
+// ADMIN_PASSWORD, without revealing its value. Remove once the admin panel works.
+app.get('/api/admin/debug', (req, res) => {
+  res.json({
+    adminPasswordSet: Boolean(process.env.ADMIN_PASSWORD),
+    adminPasswordLength: process.env.ADMIN_PASSWORD ? process.env.ADMIN_PASSWORD.length : 0
+  });
+});
+
 // Admin-only: clear any bettor's bets regardless of lock status. Requires the
 // ADMIN_PASSWORD env var to be set on the server and sent back via X-Admin-Password.
 app.delete('/api/admin/bets/:bettor', (req, res) => {
