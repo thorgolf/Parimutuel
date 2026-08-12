@@ -115,7 +115,7 @@ app.delete('/api/bets/:bettor', (req, res) => {
 });
 
 // TEMPORARY diagnostic route — confirms whether the running process actually sees
-// ADMIN_PASSWORD, without revealing its value. Remove once the admin panel works.
+// ADMIN_PASSWORD and DATA_DIR, without revealing values. Remove once the admin panel works.
 app.get('/api/admin/debug', (req, res) => {
   const keysContainingPassword = Object.keys(process.env).filter((k) => /password|admin/i.test(k));
   res.json({
@@ -124,7 +124,9 @@ app.get('/api/admin/debug', (req, res) => {
     similarKeysFound: keysContainingPassword,
     totalEnvVarCount: Object.keys(process.env).length,
     railwayDetected: Object.keys(process.env).some((k) => k.startsWith('RAILWAY_')),
-    dataDirSet: Boolean(process.env.DATA_DIR)
+    dataDirSet: Boolean(process.env.DATA_DIR),
+    allEnvKeysSorted: Object.keys(process.env).sort(),
+    processUptimeSeconds: Math.round(process.uptime())
   });
 });
 
