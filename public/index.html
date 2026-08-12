@@ -98,7 +98,7 @@
   <h2>Your Name</h2>
   <p class="muted">Select your name from the roster. If you've already submitted, your picks will load back in.</p>
   <div class="row">
-    <select id="new-bettor-select" style="min-width:220px;" onchange="onBettorPicked(this)"></select>
+    <select id="new-bettor-select" style="min-width:220px;" onChange="onBettorPicked(this)"></select>
   </div>
   <div id="bettor-list"></div>
 </div>
@@ -110,14 +110,26 @@
 <div class="card">
   <div id="submit-status" style="margin-bottom:10px;"></div>
   <div class="row">
-    <button id="submit-btn" onclick="submitBets()">Submit My Bets</button>
-    <button class="danger" onclick="clearMyBets()">Clear My Bets</button>
+    <button id="submit-btn" onClick="submitBets()">Submit My Bets</button>
+    <button id="clear-btn" class="danger" onClick="clearMyBets()">Clear My Bets</button>
   </div>
 </div>
 
 <h2 style="color:var(--green-dark); margin: 24px 0 4px;">All Submitted Bets</h2>
-<p class="muted" style="margin-bottom:12px;">Everyone's bets, shared live from the database. <button class="secondary" style="padding:3px 10px;" onclick="renderAllBets()">Refresh</button></p>
+<p class="muted" style="margin-bottom:12px;">Everyone's bets, shared live from the database. <button class="secondary" style="padding:3px 10px;" onClick="renderAllBets()">Refresh</button></p>
 <div id="all-bets-container"></div>
+
+<details class="card">
+  <summary style="cursor:pointer; font-weight:700; color:var(--green-dark);">Admin</summary>
+  <p class="muted" style="margin-top:10px;">Enter the admin password to clear any bettor's bets, including locked-in ($40) ones. Regular players can't do this.</p>
+  <div class="row">
+    <input type="password" id="admin-password" placeholder="Admin password" style="padding:7px 9px; border:1px solid var(--border); border-radius:6px;">
+    <select id="admin-bettor-select"><option value="">— select a bettor —</option></select>
+    <button class="danger" onClick="adminClearBettor()">Clear This Bettor's Bets</button>
+    <button class="secondary" onClick="populateAdminBettorSelect()">Refresh list</button>
+  </div>
+  <div id="admin-status"></div>
+</details>
 
 <p class="footer-note">Your submitted bets are stored on the server, shared by everyone who opens this page — nothing is kept in this browser only.</p>
 
@@ -143,6 +155,7 @@ const flights = DEFAULT_FLIGHTS.map(f => ({
   players: f.players.map(name => ({ id: uid(), name }))
 }));
 let bettorName = null;
+let bettorLocked = false; // true once this bettor has fully submitted $40 across all 4 flights
 let bets = {};   // { flightId: { playerId: amount } }
 let picks = {};  // { flightId: [playerId, ...] }
 
@@ -215,7 +228,7 @@ function onBetInput(flightId, playerId, value) {
 // ---------- your name ----------
 function onBettorPicked(select) {
   const name = select.value;
-  if (!name) { bettorName = null; bets = {}; picks = {}; renderBettorList(); renderBets(); return; }
+  if (!name) { bettorName = null; bettorLocked = false; bets = {}; picks = {}; renderBettorList(); renderBets(); return; }
   bettorName = name;
   renderBettorList();
   loadMyBetsFromServer(name);
@@ -229,18 +242,25 @@ function renderBettorSelect() {
 function renderBettorList() {
   renderBettorSelect();
   const container = document.getElementById('bettor-list');
-  container.innerHTML = bettorName
-    ? `<p class="muted">Betting as <strong>${escapeHtml(bettorName)}</strong>.</p>`
-    : '<p class="muted">Select your name above to start placing bets.</p>';
+  if (!bettorName) {
+    container.innerHTML = '<p class="muted">Select your name above to start placing bets.</p>';
+    return;
+  }
+  container.innerHTML = bettorLocked
+    ? `<p class="muted">Betting as <strong>${escapeHtml(bettorName)}</strong>. <span style="color:var(--green-dark); font-weight:700;">🔒 Locked in — full $40 submitted. See the admin below for corrections.</span></p>`
+    : `<p class="muted">Betting as <strong>${escapeHtml(bettorName)}</strong>.</p>`;
 }
 
 async function loadMyBetsFromServer(name) {
   bets = {};
   picks = {};
+  bettorLocked = false;
   document.getElementById('submit-status').innerHTML = '<p class="muted">Loading your existing bets, if any…</p>';
   try {
     const res = await fetch('/api/bets/' + encodeURIComponent(name));
-    const mine = res.ok ? await res.json() : [];
+    const data = res.ok ? await res.json() : { bets: [], locked: false };
+    const mine = data.bets || [];
+    bettorLocked = Boolean(data.locked);
     mine.forEach(row => {
       const f = flights.find(fl => fl.name === row.flight);
       if (!f) return;
@@ -250,12 +270,13 @@ async function loadMyBetsFromServer(name) {
       const list = getPicks(f.id);
       if (!list.includes(p.id)) list.push(p.id);
     });
-    document.getElementById('submit-status').innerHTML = mine.length
-      ? '<p class="muted">Loaded your previous submission — edit and resubmit any time.</p>'
-      : '';
+    document.getElementById('submit-status').innerHTML = bettorLocked
+      ? '<p style="color:var(--green-dark); font-weight:600;">🔒 Your bets are locked in — full $40 already submitted.</p>'
+      : (mine.length ? '<p class="muted">Loaded your previous submission — edit and resubmit any time.</p>' : '');
   } catch (e) {
     document.getElementById('submit-status').innerHTML = '<p class="warn">Could not reach the server to load your previous bets. You can still fill in new ones below.</p>';
   }
+  renderBettorList();
   renderBets();
 }
 
@@ -273,13 +294,14 @@ function renderBets() {
     container.innerHTML = '<div class="card"><p class="muted">Select your name above first.</p></div>';
     return;
   }
+  const disabledAttr = bettorLocked ? 'disabled' : '';
   container.innerHTML = flights.map(f => {
     const list = getPicks(f.id);
     const sum = flightSum(f.id);
     const ok = sum === BET_AMOUNT_CAP;
     const remaining = Math.max(0, BET_AMOUNT_CAP - sum);
     const hasUnpicked = f.players.some(p => !list.includes(p.id));
-    const canAddMore = remaining > 0 && hasUnpicked;
+    const canAddMore = remaining > 0 && hasUnpicked && !bettorLocked;
     const pickRows = list.map(pid => {
       const amt = getBet(f.id, pid);
       const maxAllowed = Math.max(0, BET_AMOUNT_CAP - (sum - amt));
@@ -289,9 +311,9 @@ function renderBets() {
         .join('');
       return `
         <div class="row">
-          <select onchange="changePick('${f.id}','${pid}', this.value)">${golferOptions}</select>
-          <select onchange="onBetInput('${f.id}','${pid}', this.value)">${amountSelectOptions(amt, maxAllowed)}</select>
-          <button class="danger" onclick="removePick('${f.id}','${pid}')">Remove</button>
+          <select ${disabledAttr} onchange="changePick('${f.id}','${pid}', this.value)">${golferOptions}</select>
+          <select ${disabledAttr} onchange="onBetInput('${f.id}','${pid}', this.value)">${amountSelectOptions(amt, maxAllowed)}</select>
+          <button class="danger" ${disabledAttr} onclick="removePick('${f.id}','${pid}')">Remove</button>
         </div>`;
     }).join('') || '<p class="muted">No picks yet for this flight.</p>';
     return `
@@ -304,6 +326,11 @@ function renderBets() {
       </div>
     `;
   }).join('');
+
+  const submitBtn = document.getElementById('submit-btn');
+  const clearBtn = document.getElementById('clear-btn');
+  if (submitBtn) submitBtn.disabled = bettorLocked;
+  if (clearBtn) clearBtn.disabled = bettorLocked;
 }
 
 // ---------- submit / clear ----------
@@ -312,6 +339,7 @@ function setSubmitStatus(html) {
 }
 async function submitBets() {
   if (!bettorName) { setSubmitStatus('<p class="warn">Select your name above before submitting.</p>'); return; }
+  if (bettorLocked) { setSubmitStatus('<p class="warn">Your bets are locked in — contact the admin for corrections.</p>'); return; }
 
   const notReady = flights.filter(f => flightSum(f.id) !== BET_AMOUNT_CAP);
   if (notReady.length > 0) {
@@ -356,16 +384,19 @@ async function submitBets() {
 
 async function clearMyBets() {
   if (!bettorName) { setSubmitStatus('<p class="warn">Select your name first.</p>'); return; }
+  if (bettorLocked) { setSubmitStatus('<p class="warn">Your bets are locked in — contact the admin for corrections.</p>'); return; }
   if (!confirm('Clear your submitted bets for ' + bettorName + '? This removes them from the shared database.')) return;
   try {
-    await fetch('/api/bets/' + encodeURIComponent(bettorName), { method: 'DELETE' });
+    const res = await fetch('/api/bets/' + encodeURIComponent(bettorName), { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not clear your bets.');
     bets = {};
     picks = {};
     setSubmitStatus('<p class="muted">Your bets have been cleared.</p>');
     renderBets();
     renderAllBets();
   } catch (e) {
-    setSubmitStatus('<p class="warn">Could not reach the server to clear your bets.</p>');
+    setSubmitStatus('<p class="warn">' + escapeHtml(e.message || 'Could not reach the server to clear your bets.') + '</p>');
   }
 }
 
@@ -425,10 +456,48 @@ async function renderAllBets() {
   }).join('');
 }
 
+// ---------- admin ----------
+async function populateAdminBettorSelect() {
+  const select = document.getElementById('admin-bettor-select');
+  try {
+    const res = await fetch('/api/bets');
+    const all = await res.json();
+    const names = Array.from(new Set(all.map(r => r.bettor))).sort();
+    select.innerHTML = '<option value="">— select a bettor —</option>' +
+      names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  } catch (e) {
+    select.innerHTML = '<option value="">Could not load bettors</option>';
+  }
+}
+async function adminClearBettor() {
+  const password = document.getElementById('admin-password').value;
+  const bettor = document.getElementById('admin-bettor-select').value;
+  const statusEl = document.getElementById('admin-status');
+  if (!password) { statusEl.innerHTML = '<p class="warn">Enter the admin password.</p>'; return; }
+  if (!bettor) { statusEl.innerHTML = '<p class="warn">Select a bettor to clear.</p>'; return; }
+  if (!confirm('Clear all bets for ' + bettor + '? This cannot be undone.')) return;
+  statusEl.innerHTML = '<p class="muted">Working…</p>';
+  try {
+    const res = await fetch('/api/admin/bets/' + encodeURIComponent(bettor), {
+      method: 'DELETE',
+      headers: { 'X-Admin-Password': password }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not clear that bettor.');
+    statusEl.innerHTML = '<p style="color:var(--green-dark); font-weight:600;">Cleared ' + escapeHtml(bettor) + ' (' + data.removed + ' rows removed).</p>';
+    populateAdminBettorSelect();
+    renderAllBets();
+    if (bettor === bettorName) { loadMyBetsFromServer(bettorName); }
+  } catch (e) {
+    statusEl.innerHTML = '<p class="warn">' + escapeHtml(e.message || 'Something went wrong.') + '</p>';
+  }
+}
+
 function renderAll() {
   renderBettorList();
   renderBets();
   renderAllBets();
+  populateAdminBettorSelect();
 }
 renderAll();
 </script>
