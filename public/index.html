@@ -92,12 +92,8 @@
 <body>
 
 <h1>RPGC Club Championship Parimutuel</h1>
-<p class="subtitle">* Bet exactly $10 total in each flight, split however you think the NET winner will be across one or more golfers. </p>
-<p class="subtitle">* Winnings from each flight's pool are paid out to whoever bet on the winning golfer, in proportion to their stake.</p>
-<p class="subtitle">* For example, if you bet $1 on Mike Smith and he wins, and if nobody else bet on him, you would win $100 (100%).</p>
-<p class="subtitle">* For example, if you bet $10 on Joe Blow and he wins, if there was $100 bet on Joe Blow you would win $10 (10%).</p>
-<p class="subtitle">* If nobody picks a flight winner correctly, that flight's money will be split evenly between the other flights.</p>
-<p class="subtitle"><b></b>Venmo $40 @ranchogolf immediately after your submission. Any unpaid entries will be removed from the competition.</b></p>
+<p class="subtitle">In each flight, bet exactly $10 total, split however you with win the NET across one or more golfers. Winnings from each flight's pool are paid out to whoever bet on the winning golfer, in proportion to their stake. For example, if you bet $10 on Joe Blow and he wins, if there was $100 bet on Joe Blow you would win $10 (10%). If nobody picks a flight winner correctly, that flight's money will be split evenly between the other flights.</p>
+<p class="muted">Venmo $40 @thorthor immediately after your submission. Any unpaid entries will be removed from the competition.</p>
 
 <div class="card">
   <h2>Your Name</h2>
@@ -125,12 +121,15 @@
 
 <details class="card">
   <summary style="cursor:pointer; font-weight:700; color:var(--green-dark);">Admin</summary>
-  <p class="muted" style="margin-top:10px;">Enter the admin password to clear any bettor's bets, including locked-in ($40) ones. Regular players can't do this.</p>
+  <p class="muted" style="margin-top:10px;">Enter the admin password to clear any bettor's bets, including locked-in ($40) ones, or to reveal/hide the "All Submitted Bets &amp; Potential Payouts" section for everyone else. Regular players can't do this.</p>
   <div class="row">
     <input type="password" id="admin-password" placeholder="Admin password" style="padding:7px 9px; border:1px solid var(--border); border-radius:6px;">
     <select id="admin-bettor-select"><option value="">-- select a bettor --</option></select>
     <button class="danger" onClick="adminClearBettor()">Clear This Bettor's Bets</button>
     <button class="secondary" onClick="populateAdminBettorSelect()">Refresh list</button>
+  </div>
+  <div class="row">
+    <button id="reveal-toggle-btn" class="secondary" onClick="adminToggleVisibility()">Reveal Bets &amp; Payouts to Everyone</button>
   </div>
   <div id="admin-status"></div>
 </details>
@@ -162,6 +161,7 @@ let bettorName = null;
 let bettorLocked = false; // true once this bettor has fully submitted $40 across all 4 flights
 let bets = {};   // { flightId: { playerId: amount } }
 let picks = {};  // { flightId: [playerId, ...] }
+let betsVisible = false; // whether the "All Submitted Bets & Potential Payouts" section is public yet
 
 function findFlight(flightId) { return flights.find(f => f.id === flightId); }
 function findPlayer(flightId, playerId) {
@@ -181,7 +181,6 @@ function flightSum(flightId) {
   return Object.values(bets[flightId] || {}).reduce((s, v) => s + (v || 0), 0);
 }
 function money(n) { return '$' + Math.round(n); }
-function moneyCents(n) { return '$' + n.toFixed(2); }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -386,20 +385,9 @@ async function submitBets() {
 }
 
 // ---------- shared "all bets" view ----------
-async function renderAllBets() {
-  const container = document.getElementById('all-bets-container');
-  container.innerHTML = '<p class="muted">Loading...</p>';
-  let all;
-  try {
-    const res = await fetch('/api/bets');
-    all = await res.json();
-  } catch (e) {
-    container.innerHTML = '<p class="warn">Could not load bets from the server.</p>';
-    return;
-  }
+function renderBetsTable(all) {
   if (all.length === 0) {
-    container.innerHTML = '<p class="muted">No bets submitted yet.</p>';
-    return;
+    return '<p class="muted">No bets submitted yet.</p>';
   }
   // Group by flight, then by golfer, so it's clear how much is riding on each player
   // and exactly who put that money down.
@@ -410,7 +398,7 @@ async function renderAllBets() {
     byFlight[row.flight][row.golfer].total += Number(row.amount);
     byFlight[row.flight][row.golfer].bettors.push({ bettor: row.bettor, amount: Number(row.amount) });
   });
-  container.innerHTML = Object.keys(byFlight).map(flightName => {
+  return Object.keys(byFlight).map(flightName => {
     const golfers = byFlight[flightName];
     const pool = Object.values(golfers).reduce((s, g) => s + g.total, 0);
     const golferNames = Object.keys(golfers).sort((a, b) => golfers[b].total - golfers[a].total);
@@ -448,11 +436,55 @@ async function renderAllBets() {
   }).join('');
 }
 
+async function renderAllBets() {
+  const container = document.getElementById('all-bets-container');
+  container.innerHTML = '<p class="muted">Loading...</p>';
+
+  let settings = { betsVisible: false };
+  try {
+    const settingsRes = await fetch('/api/settings');
+    if (settingsRes.ok) settings = await settingsRes.json();
+  } catch (e) { /* default to hidden if settings can't be reached */ }
+  betsVisible = Boolean(settings.betsVisible);
+  updateRevealButton();
+
+  const adminPasswordInput = document.getElementById('admin-password');
+  const adminPassword = adminPasswordInput ? adminPasswordInput.value : '';
+  const headers = adminPassword ? { 'X-Admin-Password': adminPassword } : {};
+
+  let all;
+  try {
+    const res = await fetch('/api/bets', { headers });
+    if (!res.ok) {
+      if (res.status === 403) {
+        container.innerHTML = '<p class="muted">Bets and payouts are hidden until the admin makes them visible to everyone.</p>';
+        return;
+      }
+      throw new Error('Could not load bets from the server.');
+    }
+    all = await res.json();
+  } catch (e) {
+    container.innerHTML = '<p class="warn">Could not load bets from the server.</p>';
+    return;
+  }
+
+  const table = renderBetsTable(all);
+  container.innerHTML = betsVisible
+    ? table
+    : '<p style="color:var(--green-dark); font-weight:600;">Viewing as admin -- this is hidden from everyone else until you reveal it.</p>' + table;
+}
+
 // ---------- admin ----------
 async function populateAdminBettorSelect() {
   const select = document.getElementById('admin-bettor-select');
+  const passwordInput = document.getElementById('admin-password');
+  const password = passwordInput ? passwordInput.value : '';
   try {
-    const res = await fetch('/api/bets');
+    const res = await fetch('/api/bets', { headers: password ? { 'X-Admin-Password': password } : {} });
+    if (!res.ok) {
+      select.innerHTML = '<option value="">Enter admin password, then Refresh list</option>';
+      return;
+    }
     const all = await res.json();
     const names = Array.from(new Set(all.map(r => r.bettor))).sort();
     select.innerHTML = '<option value="">-- select a bettor --</option>' +
@@ -480,6 +512,37 @@ async function adminClearBettor() {
     populateAdminBettorSelect();
     renderAllBets();
     if (bettor === bettorName) { loadMyBetsFromServer(bettorName); }
+  } catch (e) {
+    statusEl.innerHTML = '<p class="warn">' + escapeHtml(e.message || 'Something went wrong.') + '</p>';
+  }
+}
+
+function updateRevealButton() {
+  const btn = document.getElementById('reveal-toggle-btn');
+  if (!btn) return;
+  btn.textContent = betsVisible ? 'Hide Bets & Payouts From Everyone' : 'Reveal Bets & Payouts to Everyone';
+}
+
+async function adminToggleVisibility() {
+  const password = document.getElementById('admin-password').value;
+  const statusEl = document.getElementById('admin-status');
+  if (!password) { statusEl.innerHTML = '<p class="warn">Enter the admin password.</p>'; return; }
+  const newValue = !betsVisible;
+  statusEl.innerHTML = '<p class="muted">Working...</p>';
+  try {
+    const res = await fetch('/api/admin/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Password': password },
+      body: JSON.stringify({ betsVisible: newValue })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not update visibility.');
+    betsVisible = Boolean(data.settings ? data.settings.betsVisible : newValue);
+    updateRevealButton();
+    statusEl.innerHTML = '<p style="color:var(--green-dark); font-weight:600;">' +
+      (betsVisible ? 'Bets & Payouts are now visible to everyone.' : 'Bets & Payouts are now hidden from everyone but admins.') +
+      '</p>';
+    renderAllBets();
   } catch (e) {
     statusEl.innerHTML = '<p class="warn">' + escapeHtml(e.message || 'Something went wrong.') + '</p>';
   }
