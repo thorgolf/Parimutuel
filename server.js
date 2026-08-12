@@ -9,6 +9,7 @@ const PORT = process.env.PORT || 3000;
 // the golf winnings tracker) so bets survive redeploys. Falls back to this folder for local dev.
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DATA_FILE = path.join(DATA_DIR, 'bets.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const BET_AMOUNT_CAP = 10;
 const FLIGHT_COUNT = 4;
 const FULL_SUBMISSION_TOTAL = BET_AMOUNT_CAP * FLIGHT_COUNT; // $40 across all 4 flights
@@ -24,6 +25,21 @@ function loadBets() {
 function saveBets(bets) {
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
   fs.writeFileSync(DATA_FILE, JSON.stringify(bets, null, 2));
+}
+
+// Settings default to betsVisible: false, so the shared "All Submitted Bets & Potential
+// Payouts" view is hidden from everyone until the admin explicitly reveals it.
+function loadSettings() {
+  try {
+    return Object.assign({ betsVisible: false }, JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')));
+  } catch (e) {
+    return { betsVisible: false };
+  }
+}
+
+function saveSettings(settings) {
+  fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
 }
 
 // A bettor is "locked" once every flight they've bet on totals exactly $10 and they've
@@ -47,13 +63,24 @@ function isAdmin(req) {
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// All submitted bets, across every bettor — powers the shared "All Bets" view.
+// Public: current visibility settings (just the boolean flag, nothing sensitive).
+app.get('/api/settings', (req, res) => {
+  res.json(loadSettings());
+});
+
+// All submitted bets, across every bettor — powers the shared "All Bets & Payouts" view.
+// Hidden (403) unless an admin has revealed it, or the caller supplies the admin password.
 app.get('/api/bets', (req, res) => {
+  const settings = loadSettings();
+  if (!settings.betsVisible && !isAdmin(req)) {
+    return res.status(403).json({ error: 'Bets are hidden until the admin makes them visible to everyone.' });
+  }
   res.json(loadBets());
 });
 
 // One bettor's current submission, so they can resume/edit from any device.
-// Also reports whether they're locked, so the frontend can freeze the UI accordingly.
+// Always accessible regardless of the shared-view visibility setting — bettors
+// need this to place/edit their own picks even while results are hidden.
 app.get('/api/bets/:bettor', (req, res) => {
   const all = loadBets();
   const mine = all.filter((b) => b.bettor === req.params.bettor);
@@ -127,6 +154,23 @@ app.delete('/api/admin/bets/:bettor', (req, res) => {
   const remaining = all.filter((b) => b.bettor !== req.params.bettor);
   saveBets(remaining);
   res.json({ status: 'ok', removed: all.length - remaining.length });
+});
+
+// Admin-only: toggle whether the shared "All Submitted Bets & Potential Payouts" view
+// is visible to everyone, or hidden (visible only to whoever supplies the admin password).
+app.post('/api/admin/settings', (req, res) => {
+  if (!process.env.ADMIN_PASSWORD) {
+    return res.status(400).json({ error: 'Admin access is not configured on this server (no ADMIN_PASSWORD set).' });
+  }
+  if (!isAdmin(req)) {
+    return res.status(401).json({ error: 'Incorrect admin password.' });
+  }
+  const settings = loadSettings();
+  if (typeof (req.body && req.body.betsVisible) === 'boolean') {
+    settings.betsVisible = req.body.betsVisible;
+  }
+  saveSettings(settings);
+  res.json({ status: 'ok', settings });
 });
 
 app.listen(PORT, () => {
