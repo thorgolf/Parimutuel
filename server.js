@@ -117,9 +117,14 @@ app.delete('/api/bets/:bettor', (req, res) => {
 // TEMPORARY diagnostic route — confirms whether the running process actually sees
 // ADMIN_PASSWORD, without revealing its value. Remove once the admin panel works.
 app.get('/api/admin/debug', (req, res) => {
+  const keysContainingPassword = Object.keys(process.env).filter((k) => /password|admin/i.test(k));
   res.json({
     adminPasswordSet: Boolean(process.env.ADMIN_PASSWORD),
-    adminPasswordLength: process.env.ADMIN_PASSWORD ? process.env.ADMIN_PASSWORD.length : 0
+    adminPasswordLength: process.env.ADMIN_PASSWORD ? process.env.ADMIN_PASSWORD.length : 0,
+    similarKeysFound: keysContainingPassword,
+    totalEnvVarCount: Object.keys(process.env).length,
+    railwayDetected: Object.keys(process.env).some((k) => k.startsWith('RAILWAY_')),
+    dataDirSet: Boolean(process.env.DATA_DIR)
   });
 });
 
