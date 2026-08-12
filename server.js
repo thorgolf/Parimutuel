@@ -26,6 +26,9 @@ function saveBets(bets) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(bets, null, 2));
 }
 
+// A bettor is "locked" once every flight they've bet on totals exactly $10 and they've
+// covered all 4 flights (i.e. the full $40). Locked bettors can't clear or resubmit —
+// only an admin override can touch their bets after that point.
 function isLocked(bettor, allBets) {
   const mine = allBets.filter((b) => b.bettor === bettor);
   const byFlight = {};
@@ -44,16 +47,21 @@ function isAdmin(req) {
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// All submitted bets, across every bettor — powers the shared "All Bets" view.
 app.get('/api/bets', (req, res) => {
   res.json(loadBets());
 });
 
+// One bettor's current submission, so they can resume/edit from any device.
+// Also reports whether they're locked, so the frontend can freeze the UI accordingly.
 app.get('/api/bets/:bettor', (req, res) => {
   const all = loadBets();
   const mine = all.filter((b) => b.bettor === req.params.bettor);
   res.json({ bets: mine, locked: isLocked(req.params.bettor, all) });
 });
 
+// Submit (or replace) a bettor's full set of picks. Re-submitting overwrites their
+// previous entry entirely rather than appending duplicate rows. Blocked once locked.
 app.post('/api/bets', (req, res) => {
   const { bettor, picks } = req.body || {};
   if (!bettor || typeof bettor !== 'string' || !Array.isArray(picks)) {
@@ -94,6 +102,8 @@ app.post('/api/bets', (req, res) => {
   res.json({ status: 'ok', savedPicks: picks.length });
 });
 
+// Clear one bettor's submission (used by "Clear My Bets" — never wipes anyone else's).
+// Blocked once that bettor is locked in (full $40 submitted) — admin override required.
 app.delete('/api/bets/:bettor', (req, res) => {
   const all = loadBets();
   if (isLocked(req.params.bettor, all) && !isAdmin(req)) {
@@ -104,25 +114,8 @@ app.delete('/api/bets/:bettor', (req, res) => {
   res.json({ status: 'ok', removed: all.length - remaining.length });
 });
 
-app.get('/api/admin/debug', (req, res) => {
-  const keysContainingPassword = Object.keys(process.env).filter((k) => /password|admin/i.test(k));
-  res.json({
-    adminPasswordSet: Boolean(process.env.ADMIN_PASSWORD),
-    adminPasswordLength: process.env.ADMIN_PASSWORD ? process.env.ADMIN_PASSWORD.length : 0,
-    similarKeysFound: keysContainingPassword,
-    totalEnvVarCount: Object.keys(process.env).length,
-    railwayDetected: Object.keys(process.env).some((k) => k.startsWith('RAILWAY_')),
-    dataDirSet: Boolean(process.env.DATA_DIR),
-    allEnvKeysSorted: Object.keys(process.env).sort(),
-    processUptimeSeconds: Math.round(process.uptime()),
-    railwayProjectName: process.env.RAILWAY_PROJECT_NAME,
-    railwayEnvironmentName: process.env.RAILWAY_ENVIRONMENT_NAME,
-    railwayServiceName: process.env.RAILWAY_SERVICE_NAME,
-    railwayServiceId: process.env.RAILWAY_SERVICE_ID,
-    railwayEnvironmentId: process.env.RAILWAY_ENVIRONMENT_ID
-  });
-});
-
+// Admin-only: clear any bettor's bets regardless of lock status. Requires the
+// ADMIN_PASSWORD env var to be set on the server and sent back via X-Admin-Password.
 app.delete('/api/admin/bets/:bettor', (req, res) => {
   if (!process.env.ADMIN_PASSWORD) {
     return res.status(400).json({ error: 'Admin access is not configured on this server (no ADMIN_PASSWORD set).' });
