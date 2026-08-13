@@ -92,8 +92,8 @@
 <body>
 
 <h1>RPGC Club Championship Parimutuel</h1>
-<p class="subtitle">In each flight, bet exactly $10 total, split however you with win the NET across one or more golfers. Winnings from each flight's pool are paid out to whoever bet on the winning golfer, in proportion to their stake. For example, if you bet $10 on Joe Blow and he wins, if there was $100 bet on Joe Blow you would win $10 (10%). If nobody picks a flight winner correctly, that flight's money will be split evenly between the other flights.</p>
-<p class="muted">Venmo $40 @thorthor immediately after your submission. Any unpaid entries will be removed from the competition.</p>
+<p class="subtitle">In each flight, bet exactly $10 total, split however you like across one or more golfers, on who you think will win the NET. Winnings from each flight's pool are paid out to whoever bet on the winning golfer, in proportion to their stake. For example, if you bet $10 on Joe Blow and he wins, if there was $100 bet on Joe Blow you would win $10 (10%). If nobody picks a flight winner correctly, that flight's money will be split evenly between the other flights.</p>
+<p class="muted">Venmo $40 @ranchogolf immediately after your submission. Any unpaid entries will be removed from the competition.</p>
 
 <div class="card">
   <h2>Your Name</h2>
@@ -389,8 +389,6 @@ function renderBetsTable(all) {
   if (all.length === 0) {
     return '<p class="muted">No bets submitted yet.</p>';
   }
-  // Group by flight, then by golfer, so it's clear how much is riding on each player
-  // and exactly who put that money down.
   const byFlight = {};
   all.forEach(row => {
     if (!byFlight[row.flight]) byFlight[row.flight] = {};
@@ -409,11 +407,11 @@ function renderBetsTable(all) {
         .sort((a, b) => b.amount - a.amount)
         .map(b => `${escapeHtml(b.bettor)} (${money(b.amount)})`)
         .join(', ');
-      const payoutBackers = g.bettors
+      const payoutBackers = g.total > 0 ? g.bettors
         .slice()
         .sort((a, b) => b.amount - a.amount)
         .map(b => `${escapeHtml(b.bettor)} (${moneyCents(pool * (b.amount / g.total))})`)
-        .join(', ');
+        .join(', ') : '';
       return `
         <tr>
           <td class="name-col">${escapeHtml(golfer)}</td>
@@ -439,39 +437,40 @@ function renderBetsTable(all) {
 async function renderAllBets() {
   const container = document.getElementById('all-bets-container');
   container.innerHTML = '<p class="muted">Loading...</p>';
-
-  let settings = { betsVisible: false };
   try {
-    const settingsRes = await fetch('/api/settings');
-    if (settingsRes.ok) settings = await settingsRes.json();
-  } catch (e) { /* default to hidden if settings can't be reached */ }
-  betsVisible = Boolean(settings.betsVisible);
-  updateRevealButton();
+    let settings = { betsVisible: false };
+    try {
+      const settingsRes = await fetch('/api/settings');
+      if (settingsRes.ok) settings = await settingsRes.json();
+    } catch (e) { /* default to hidden if settings can't be reached */ }
+    betsVisible = Boolean(settings.betsVisible);
+    updateRevealButton();
 
-  const adminPasswordInput = document.getElementById('admin-password');
-  const adminPassword = adminPasswordInput ? adminPasswordInput.value : '';
-  const headers = adminPassword ? { 'X-Admin-Password': adminPassword } : {};
+    const adminPasswordInput = document.getElementById('admin-password');
+    const adminPassword = adminPasswordInput ? adminPasswordInput.value : '';
+    const headers = adminPassword ? { 'X-Admin-Password': adminPassword } : {};
 
-  let all;
-  try {
     const res = await fetch('/api/bets', { headers });
     if (!res.ok) {
       if (res.status === 403) {
         container.innerHTML = '<p class="muted">Bets and payouts are hidden until the admin makes them visible to everyone.</p>';
         return;
       }
-      throw new Error('Could not load bets from the server.');
+      throw new Error('Server returned ' + res.status + ' loading bets.');
     }
-    all = await res.json();
-  } catch (e) {
-    container.innerHTML = '<p class="warn">Could not load bets from the server.</p>';
-    return;
-  }
+    const all = await res.json();
+    if (!Array.isArray(all)) {
+      throw new Error('Unexpected response loading bets (not a list).');
+    }
 
-  const table = renderBetsTable(all);
-  container.innerHTML = betsVisible
-    ? table
-    : '<p style="color:var(--green-dark); font-weight:600;">Viewing as admin -- this is hidden from everyone else until you reveal it.</p>' + table;
+    const table = renderBetsTable(all);
+    container.innerHTML = betsVisible
+      ? table
+      : '<p style="color:var(--green-dark); font-weight:600;">Viewing as admin -- this is hidden from everyone else until you reveal it.</p>' + table;
+  } catch (e) {
+    console.error('renderAllBets failed:', e);
+    container.innerHTML = '<p class="warn">Could not load bets: ' + escapeHtml(e.message || String(e)) + '</p>';
+  }
 }
 
 // ---------- admin ----------
