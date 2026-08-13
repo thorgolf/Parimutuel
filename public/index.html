@@ -92,8 +92,8 @@
 <body>
 
 <h1>RPGC Club Championship Parimutuel</h1>
-<p class="subtitle">In each flight, bet exactly $10 total, split however you like across one or more golfers, on who you think will win the NET. Winnings from each flight's pool are paid out to whoever bet on the winning golfer, in proportion to their stake. For example, if you bet $10 on Joe Blow and he wins, if there was $100 bet on Joe Blow you would win $10 (10%). If nobody picks a flight winner correctly, that flight's money will be split evenly between the other flights.</p>
-<p class="muted">Venmo $40 @ranchogolf immediately after your submission. Any unpaid entries will be removed from the competition.</p>
+<p class="subtitle">In each flight, bet exactly $10 total, split however you with win the NET across one or more golfers. Winnings from each flight's pool are paid out to whoever bet on the winning golfer, in proportion to their stake. For example, if you bet $10 on Joe Blow and he wins, if there was $100 bet on Joe Blow you would win $10 (10%). If nobody picks a flight winner correctly, that flight's money will be split evenly between the other flights.</p>
+<p class="muted">Venmo $40 @thorthor immediately after your submission. Any unpaid entries will be removed from the competition.</p>
 
 <div class="card">
   <h2>Your Name</h2>
@@ -181,6 +181,7 @@ function flightSum(flightId) {
   return Object.values(bets[flightId] || {}).reduce((s, v) => s + (v || 0), 0);
 }
 function money(n) { return '$' + Math.round(n); }
+function moneyCents(n) { return '$' + n.toFixed(2); }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
