@@ -124,10 +124,22 @@
   </div>
   <div class="row">
     <button id="reveal-toggle-btn" class="secondary" onClick="adminToggleVisibility()">Reveal Bets &amp; Payouts to Everyone</button>
-    <button class="secondary" onClick="adminShowRecentSignups()">Show Bettors by Most Recent Signup</button>
   </div>
   <div id="admin-status"></div>
-  <div id="admin-recent-container" style="margin-top:10px;"></div>
+</details>
+<details class="card">
+  <summary style="cursor:pointer; font-weight:700; color:var(--green-dark);">Calculate Winners</summary>
+  <p class="muted" style="margin-top:10px;">Enter the admin password, pick the winning golfer for each flight, and calculate payouts using the live submitted bets. If a flight's winner has no bets on them, that flight's pool is split evenly across the other flights, per the house rule.</p>
+  <div class="row">
+    <input type="password" id="calc-admin-password" placeholder="Admin password" style="padding:7px 9px; border:1px solid var(--border); border-radius:6px;">
+    <button class="secondary" onClick="populateCalcWinnerSelects()">Load Golfers</button>
+  </div>
+  <div id="calc-winner-selects"></div>
+  <div class="row">
+    <button onClick="calculateWinners()">Calculate Payouts</button>
+  </div>
+  <div id="calc-status"></div>
+  <div id="calc-results"></div>
 </details>
 <p class="footer-note">Your submitted bets are stored on the server, shared by everyone who opens this page - nothing is kept in this browser only.</p>
 <script>
@@ -518,42 +530,99 @@ async function adminToggleVisibility() {
     statusEl.innerHTML = '<p class="warn">' + escapeHtml(e.message || 'Something went wrong.') + '</p>';
   }
 }
-async function adminShowRecentSignups() {
-  const password = document.getElementById('admin-password').value;
-  const container = document.getElementById('admin-recent-container');
-  if (!password) { container.innerHTML = '<p class="warn">Enter the admin password first.</p>'; return; }
-  container.innerHTML = '<p class="muted">Loading...</p>';
+function populateCalcWinnerSelects() {
+  const container = document.getElementById('calc-winner-selects');
+  container.innerHTML = flights.map(f => {
+    const options = f.players.map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`).join('');
+    return `
+      <div class="row">
+        <label style="min-width:170px; font-size:13px; font-weight:600;">${escapeHtml(f.name)}:</label>
+        <select id="calc-winner-${f.id}"><option value="">-- pick the winner --</option>${options}</select>
+      </div>
+    `;
+  }).join('');
+}
+
+async function calculateWinners() {
+  const password = document.getElementById('calc-admin-password').value;
+  const statusEl = document.getElementById('calc-status');
+  const resultsEl = document.getElementById('calc-results');
+  resultsEl.innerHTML = '';
+  if (!password) { statusEl.innerHTML = '<p class="warn">Enter the admin password.</p>'; return; }
+
+  const winners = {};
+  let missing = [];
+  flights.forEach(f => {
+    const sel = document.getElementById('calc-winner-' + f.id);
+    const val = sel ? sel.value : '';
+    if (!val) { missing.push(f.name); }
+    winners[f.name] = val;
+  });
+  if (missing.length > 0) {
+    statusEl.innerHTML = '<p class="warn">Pick a winner for: ' + missing.map(escapeHtml).join(', ') + '.</p>';
+    return;
+  }
+
+  statusEl.innerHTML = '<p class="muted">Loading bets and calculating...</p>';
   try {
     const res = await fetch('/api/bets', { headers: { 'X-Admin-Password': password } });
-    const data = await res.json();
-    if (!res.ok) throw new Error((data && data.error) || 'Could not load bets.');
-    if (!Array.isArray(data) || data.length === 0) {
-      container.innerHTML = '<p class="muted">No bets submitted yet.</p>';
-      return;
-    }
-    // Each bet row has a timestamp; take the latest one per bettor (their most recent
-    // submit/resubmit), then sort so the newest signup is first.
-    const latestByBettor = {};
-    data.forEach(row => {
-      const t = row.timestamp ? new Date(row.timestamp).getTime() : 0;
-      if (!latestByBettor[row.bettor] || t > latestByBettor[row.bettor]) {
-        latestByBettor[row.bettor] = t;
-      }
+    const all = await res.json();
+    if (!res.ok) throw new Error((all && all.error) || 'Could not load bets.');
+    if (!Array.isArray(all)) throw new Error('Unexpected response loading bets.');
+
+    const byFlight = {};
+    all.forEach(row => {
+      if (!byFlight[row.flight]) byFlight[row.flight] = {};
+      if (!byFlight[row.flight][row.golfer]) byFlight[row.flight][row.golfer] = { total: 0, bettors: [] };
+      byFlight[row.flight][row.golfer].total += Number(row.amount);
+      byFlight[row.flight][row.golfer].bettors.push({ bettor: row.bettor, amount: Number(row.amount) });
     });
-    const sorted = Object.keys(latestByBettor).sort((a, b) => latestByBettor[b] - latestByBettor[a]);
-    const rows = sorted.map((bettor, i) => {
-      const ts = latestByBettor[bettor];
-      const when = ts ? new Date(ts).toLocaleString() : 'unknown time';
-      return `<tr><td class="name-col">${i === 0 ? '<strong>' + escapeHtml(bettor) + ' (most recent)</strong>' : escapeHtml(bettor)}</td><td>${escapeHtml(when)}</td></tr>`;
+
+    const flightInfo = flights.map(f => {
+      const golfers = byFlight[f.name] || {};
+      const pool = Object.values(golfers).reduce((s, g) => s + g.total, 0);
+      const winnerName = winners[f.name];
+      const winnerData = golfers[winnerName] || { total: 0, bettors: [] };
+      return { name: f.name, pool, winnerName, winnerTotal: winnerData.total, winnerBettors: winnerData.bettors };
+    });
+
+    const dead = flightInfo.filter(f => f.winnerTotal === 0 && f.pool > 0);
+    const live = flightInfo.filter(f => f.winnerTotal > 0);
+    const rolloverPool = dead.reduce((s, f) => s + f.pool, 0);
+    const rolloverShare = live.length > 0 ? rolloverPool / live.length : 0;
+
+    resultsEl.innerHTML = flightInfo.map(f => {
+      if (f.winnerTotal === 0) {
+        return `
+          <div class="card">
+            <h2>${escapeHtml(f.name)} <span class="muted">- winner: ${escapeHtml(f.winnerName)}</span></h2>
+            <p class="warn">Nobody bet on ${escapeHtml(f.winnerName)}. This flight's pool (${money(f.pool)}) rolls over evenly to the other flights.</p>
+          </div>
+        `;
+      }
+      const effectivePool = f.pool + rolloverShare;
+      const rows = f.winnerBettors
+        .slice()
+        .sort((a, b) => b.amount - a.amount)
+        .map(b => `<tr><td class="name-col">${escapeHtml(b.bettor)}</td><td>${money(b.amount)}</td><td><strong>${moneyCents(effectivePool * (b.amount / f.winnerTotal))}</strong></td></tr>`)
+        .join('');
+      const rolloverNote = rolloverShare > 0
+        ? `<p class="muted" style="margin:-6px 0 10px;">Includes a ${moneyCents(rolloverShare)} rollover share from flight(s) where nobody backed the winner, on top of this flight's own ${money(f.pool)} pool.</p>`
+        : '';
+      return `
+        <div class="card">
+          <h2>${escapeHtml(f.name)} <span class="muted">- winner: ${escapeHtml(f.winnerName)}, payout pool: ${moneyCents(effectivePool)}</span></h2>
+          ${rolloverNote}
+          <table>
+            <thead><tr><th class="name-col">Backer</th><th>Bet on Winner</th><th>Payout</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
     }).join('');
-    container.innerHTML = `
-      <table>
-        <thead><tr><th class="name-col">Bettor</th><th>Last Submitted</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    `;
+    statusEl.innerHTML = '<p style="color:var(--green-dark); font-weight:600;">Calculated.</p>';
   } catch (e) {
-    container.innerHTML = '<p class="warn">' + escapeHtml(e.message || 'Something went wrong.') + '</p>';
+    statusEl.innerHTML = '<p class="warn">' + escapeHtml(e.message || 'Something went wrong.') + '</p>';
   }
 }
 
